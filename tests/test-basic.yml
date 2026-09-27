@@ -1,0 +1,57 @@
+name: Test basic usage - Sphinx Problem Matcher
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run the Sphinx Problem Matcher action
+        id: action
+        uses: .
+
+      - name: Assert action completed successfully
+        run: |
+          echo "PASS: action step completed without error"
+
+      - name: Assert sphinx_matcher.json exists in action directory
+        run: |
+          # The matcher file may be at the workspace root or in action/ subdirectory
+          # depending on how the harness sets up the workspace
+          if [ -f "$GITHUB_WORKSPACE/sphinx_matcher.json" ]; then
+            MATCHER_FILE="$GITHUB_WORKSPACE/sphinx_matcher.json"
+          elif [ -f "$GITHUB_WORKSPACE/action/sphinx_matcher.json" ]; then
+            MATCHER_FILE="$GITHUB_WORKSPACE/action/sphinx_matcher.json"
+          else
+            # Try to find it anywhere under workspace
+            MATCHER_FILE=$(find "$GITHUB_WORKSPACE" -name "sphinx_matcher.json" -type f 2>/dev/null | head -1)
+          fi
+          echo "Checking for matcher file at: $MATCHER_FILE"
+          if [ -z "$MATCHER_FILE" ] || [ ! -f "$MATCHER_FILE" ]; then
+            echo "FAIL: sphinx_matcher.json not found under $GITHUB_WORKSPACE"
+            find "$GITHUB_WORKSPACE" -name "*.json" 2>/dev/null || true
+            exit 1
+          fi
+          echo "PASS: sphinx_matcher.json exists at $MATCHER_FILE"
+
+      - name: Assert sphinx_matcher.json contains expected owner
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/sphinx_matcher.json" ]; then
+            MATCHER_FILE="$GITHUB_WORKSPACE/sphinx_matcher.json"
+          elif [ -f "$GITHUB_WORKSPACE/action/sphinx_matcher.json" ]; then
+            MATCHER_FILE="$GITHUB_WORKSPACE/action/sphinx_matcher.json"
+          else
+            MATCHER_FILE=$(find "$GITHUB_WORKSPACE" -name "sphinx_matcher.json" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$MATCHER_FILE" ] || [ ! -f "$MATCHER_FILE" ]; then
+            echo "FAIL: sphinx_matcher.json not found"
+            exit 1
+          fi
+          CONTENT=$(cat "$MATCHER_FILE")
+          echo "Content: $CONTENT"
+          if ! echo "$CONTENT" | grep -q "sphinx-problem-matcher"; then
+            echo "FAIL: sphinx_matcher.json does not contain expected owner 'sphinx-problem-matcher'"
+            exit 1
+          fi
+          echo "PASS: sphinx_matcher.json contains expected owner"

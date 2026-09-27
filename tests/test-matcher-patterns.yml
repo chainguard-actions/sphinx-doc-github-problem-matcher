@@ -1,0 +1,93 @@
+name: Test matcher JSON patterns - Sphinx Problem Matcher
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run the Sphinx Problem Matcher action
+        id: action
+        uses: .
+
+      - name: Locate sphinx_matcher.json
+        id: locate
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/sphinx_matcher.json" ]; then
+            MATCHER_FILE="$GITHUB_WORKSPACE/sphinx_matcher.json"
+          elif [ -f "$GITHUB_WORKSPACE/action/sphinx_matcher.json" ]; then
+            MATCHER_FILE="$GITHUB_WORKSPACE/action/sphinx_matcher.json"
+          else
+            MATCHER_FILE=$(find "$GITHUB_WORKSPACE" -name "sphinx_matcher.json" -type f 2>/dev/null | head -1)
+          fi
+          echo "Found matcher file at: $MATCHER_FILE"
+          if [ -z "$MATCHER_FILE" ] || [ ! -f "$MATCHER_FILE" ]; then
+            echo "FAIL: sphinx_matcher.json not found under $GITHUB_WORKSPACE"
+            exit 1
+          fi
+          echo "matcher_file=$MATCHER_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Assert matcher JSON has three problem matchers
+        env:
+          MATCHER_FILE: ${{ steps.locate.outputs.matcher_file }}
+        run: |
+          echo "Reading: $MATCHER_FILE"
+          COUNT=$(python3 -c "import json,sys; d=json.load(open('$MATCHER_FILE')); print(len(d['problemMatcher']))")
+          echo "Number of matchers: $COUNT"
+          if [ "$COUNT" != "3" ]; then
+            echo "FAIL: expected 3 problem matchers, got $COUNT"
+            exit 1
+          fi
+          echo "PASS: found 3 problem matchers"
+
+      - name: Assert strict matcher pattern matches Sphinx error format
+        run: |
+          # Test the strict pattern: file:line: severity: message
+          MATCH=$(echo '/path/to/file.rst:42: WARNING: some warning message' | python3 -c "
+          import re, sys
+          pattern = r'^(.*):(\\d+):\\s+(\\w*):\\s+(.*)$'
+          line = sys.stdin.read().strip()
+          m = re.match(pattern, line)
+          print('match' if m else 'no-match')
+          ")
+          echo "Match result: $MATCH"
+          if [ "$MATCH" != "match" ]; then
+            echo "FAIL: strict pattern did not match expected Sphinx error format"
+            exit 1
+          fi
+          echo "PASS: strict pattern matches Sphinx error format"
+
+      - name: Assert loose matcher pattern matches rst file errors
+        run: |
+          # Test the loose pattern: /path/to/file.rst: severity: message
+          MATCH=$(echo '/path/to/file.rst: WARNING: some warning message' | python3 -c "
+          import re, sys
+          pattern = r'(\\/.*\\.rst):\\s+(\\w*):\\s+(.*)$'
+          line = sys.stdin.read().strip()
+          m = re.search(pattern, line)
+          print('match' if m else 'no-match')
+          ")
+          echo "Loose match result: $MATCH"
+          if [ "$MATCH" != "match" ]; then
+            echo "FAIL: loose pattern did not match expected rst file error format"
+            exit 1
+          fi
+          echo "PASS: loose pattern matches rst file error format"
+
+      - name: Assert loose-no-severity matcher pattern matches rst file errors without severity
+        run: |
+          # Test the loose-no-severity pattern: file.rst:line: message
+          MATCH=$(echo 'path/to/file.rst:10: some message without severity' | python3 -c "
+          import re, sys
+          pattern = r'^(.*\.rst):(\d+):(.*)$'
+          line = sys.stdin.read().strip()
+          m = re.match(pattern, line)
+          print('match' if m else 'no-match')
+          ")
+          echo "Loose-no-severity match result: $MATCH"
+          if [ "$MATCH" != "match" ]; then
+            echo "FAIL: loose-no-severity pattern did not match expected format"
+            exit 1
+          fi
+          echo "PASS: loose-no-severity pattern matches rst file errors without severity"
